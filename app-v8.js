@@ -43,7 +43,7 @@ function renderHome(){
         ${list.length===0?`<div class="text-gray-500">Zatím žádné turnaje.</div>`:`<div class="bg-white border border-gray-200 rounded divide-y">${list.map(t=>`<button data-open="${escapeAttr(t.id)}" class="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between"><div><div class="font-medium">${escapeHtml(t.name)}</div><div class="text-sm text-gray-500">${escapeHtml(t.date||"")} · ${escapeHtml(t.location||"")} · ${escapeHtml(t.division||"")}</div></div><div class="text-gray-400">›</div></button>`).join("")}</div>`}
         </main></div>`;
 }
-function attachHomeEvents(){ const be=document.getElementById("btn-export"); if(be){ be.onclick=()=>{ try{ const data=JSON.stringify(loadTournaments(),null,2); const blob=new Blob([data],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="turnajplanner-export.json"; a.click(); URL.revokeObjectURL(url); }catch(e){alert(e.message);} }; } const bi=document.getElementById("btn-import"); if(bi){ bi.onchange=(e)=>{ const file=e.target.files[0]; if(!file)return; const reader=new FileReader(); reader.onload=()=>{ try{ const arr=JSON.parse(reader.result); if(Array.isArray(arr)){ const cur=loadTournaments(); const merged=[...arr,...cur]; const uniq=[]; const seen=new Set(); for(const x of merged){ if(!x||!x.id) continue; if(seen.has(x.id)) continue; seen.add(x.id); uniq.push(x); } localStorage.setItem(STORAGE_KEY,JSON.stringify(uniq)); alert("Importováno"); location.reload(); } }catch(ex){alert("Chyba importu");} }; reader.readAsText(file); }; } const b=document.getElementById("btn-new"); if(b) b.onclick=()=>{ state.wizard={step:1,name:"",date:"",location:"",division:""}; navigate("wizard"); }; document.querySelectorAll("[data-open]").forEach(btn=>{ btn.onclick=()=>{ const id=btn.getAttribute("data-open"); setCurrentId(id); state.currentId=id; state.tournamentTab="general"; navigate("tournament"); }; }); }
+function attachHomeEvents(){ const b=document.getElementById("btn-new"); if(b) b.onclick=()=>{ state.wizard={step:1,name:"",date:"",location:"",division:""}; navigate("wizard"); }; document.querySelectorAll("[data-open]").forEach(btn=>{ btn.onclick=()=>{ const id=btn.getAttribute("data-open"); setCurrentId(id); state.currentId=id; state.tournamentTab="general"; navigate("tournament"); }; }); }
 
 function renderWizard(){
     const w=state.wizard;
@@ -68,7 +68,7 @@ function renderTournamentTab(t){
     if(state.tournamentTab==="participants") return renderParticipants(t);
     if(state.tournamentTab==="format") return renderFormat(t);
     if(state.tournamentTab==="schedule") return renderSchedule(t);
-    if(state.tournamentTab==="results") return `<div class="flex flex-col gap-4"><div class="bg-white border border-gray-200 rounded p-4"><h2 class="font-medium mb-2">Výsledky zápasů</h2><div id="results-matches" class="flex flex-col gap-2"></div></div><div class="bg-white border border-gray-200 rounded p-4"><h2 class="font-medium mb-2">Tabulky</h2><div id="standings-list" class="flex flex-col gap-3"></div></div></div>`;
+    if(state.tournamentTab==="results") return renderResults(t);
     return `<div class="bg-white border border-gray-200 rounded p-4 text-gray-500">Presentation - zatím prázdné</div>`;
 }
 
@@ -131,14 +131,47 @@ function getGroupSlots(t){ const slots=[]; (t.groups||[]).forEach(g=>{ for(let r
 function buildGroups(t,onlyGroups){
     t.teams=t.teams||[]; if(t.teams.length===0){alert("Přidej týmy v Participants");return;}
     let gcount,tpg; if(onlyGroups){ const gc2=document.getElementById("f-gcount2"), tp2=document.getElementById("f-tpg2"); gcount=gc2?parseInt(gc2.value)||1:1; tpg=tp2?parseInt(tp2.value)||t.teams.length:t.teams.length; } else { const gc=document.getElementById("f-gcount"), tp=document.getElementById("f-tpg"), adv=document.getElementById("f-adv"); gcount=gc?parseInt(gc.value)||1:1; tpg=tp?parseInt(tp.value)||t.teams.length:t.teams.length; if(adv) t.format.advanceCount=parseInt(adv.value)||2; }
-    t.format.groupsCount=gcount; t.format.teamsPerGroup=tpg; const groups=[]; for(let i=0;i<gcount;i++) groups.push({name:"Group "+String.fromCharCode(65+i),teams:Array(tpg).fill(null)}); t.groups=groups; if(!t.bracket) t.bracket={matches:[]}; if(t.format.type==="groups_knockout"){ const advance=t.format.advanceCount||2; const slots=[]; (t.groups||[]).forEach(g=>{ for(let r=1;r<=advance;r++) slots.push({label:r+". "+g.name,value:"pos:"+r+":"+g.name}); }); const matches=(t.bracket.matches||[]).filter(m=>m.isPre); if(slots.length>=4){ matches.push({id:uid(),name:"Semifinal 1",isSemi:true,teams:[null,null],sources:[slots,slots]}); matches.push({id:uid(),name:"Semifinal 2",isSemi:true,teams:[null,null],sources:[slots,slots]}); matches.push({id:uid(),name:"Final A",isFinal:true,teams:[null,null],sources:["Winner of semifinal 1","Winner of semifinal 2"]}); matches.push({id:uid(),name:"Final B",isFinal:true,teams:[null,null],sources:["Loser of semifinal 1","Loser of semifinal 2"]}); } else if(slots.length===2){ matches.push({id:uid(),name:"Final",isFinal:true,teams:[null,null],sources:[slots,slots]}); } t.bracket.matches=matches; } else { t.bracket.matches=[]; } saveCurrent(t); render();
+    t.format.groupsCount=gcount; t.format.teamsPerGroup=tpg;
+    const groups=[]; for(let i=0;i<gcount;i++) groups.push({name:"Group "+String.fromCharCode(65+i),teams:Array(tpg).fill(null)});
+    t.groups=groups;
+    if(!t.bracket) t.bracket={matches:[]};
+    if(t.format.type==="groups_knockout"){
+        const advance=t.format.advanceCount||2;
+        const slots=[];
+        (t.groups||[]).forEach(g=>{ for(let r=1;r<=advance;r++) slots.push({label:r+". "+g.name,value:"pos:"+r+":"+g.name}); });
+        let matches=(t.bracket.matches||[]).filter(m=>m.isPre);
+        if(slots.length>=4){
+            matches.push({id:"s1_"+uid(),name:"Semifinal 1",isSemi:true,teams:[null,null],sources:[slots,slots]});
+            matches.push({id:"s2_"+uid(),name:"Semifinal 2",isSemi:true,teams:[null,null],sources:[slots,slots]});
+            matches.push({id:"fa_"+uid(),name:"Final A",isFinal:true,teams:[null,null],sources:["Winner of semifinal 1","Winner of semifinal 2"]});
+            matches.push({id:"fb_"+uid(),name:"Final B",isFinal:true,teams:[null,null],sources:["Loser of semifinal 1","Loser of semifinal 2"]});
+        } else if(slots.length===2){
+            matches.push({id:"f_"+uid(),name:"Final",isFinal:true,teams:[null,null],sources:[slots,slots]});
+        }
+        t.bracket.matches=matches;
+    } else {
+        t.bracket.matches=[];
+    }
+    saveCurrent(t);
+    render();
 }
 function getUsedTeamIds(t){ const used=new Set(); (t.groups||[]).forEach(g=>{ (g.teams||[]).forEach(tid=>{ if(tid) used.add(tid); }); }); return used; }
 function renderGroups(t){
-    const list=document.getElementById("groups-list"); if(!list)return; const used=getUsedTeamIds(t);
-    list.innerHTML=(t.groups||[]).map((g,gi)=>`<div class="border rounded p-2"><div class="font-medium mb-1">${escapeHtml(g.name)}</div><div class="flex flex-col gap-1">${(g.teams||[]).map((teamId,ti)=>`<select data-gsel="${gi}" data-gti="${ti}" class="border rounded px-2 py-1.5"><option value="">Empty spot</option>${(t.teams||[]).map(tm=>{ if(used.has(tm.id)&&teamId!==tm.id)return ""; return `<option value="${escapeAttr(tm.id)}" ${teamId===tm.id?"selected":""}>${escapeHtml(tm.name)}</option>`; }).join("")}</select>`).join("")}</div></div>`).join("");
-    document.querySelectorAll("[data-gsel]").forEach(sel=>{ sel.onchange=()=>{ const gi=parseInt(sel.getAttribute("data-gsel")), ti=parseInt(sel.getAttribute("data-gti")); if(!t.groups[gi])return; t.groups[gi].teams[ti]=sel.value||null; saveCurrent(t); if(t.format&&t.format.type==="groups_knockout"){ buildGroups(t,false); } else { render(); } }; });
-    if(t.format&&t.format.type==="groups_knockout"){ renderBracket(t); } else { renderBracket(t); }
+    const list=document.getElementById("groups-list"); if(!list)return;
+    if(!t.groups) t.groups=[];
+    const used=getUsedTeamIds(t);
+    list.innerHTML=(t.groups||[]).map((g,gi)=>`<div class="border rounded p-2"><div class="font-medium mb-1">${escapeHtml(g.name)}</div><div class="flex flex-col gap-1">${(g.teams||[]).map((teamId,ti)=>`<select data-gsel="${gi}" data-gti="${ti}" class="border rounded px-2 py-1.5"><option value="">Empty spot</option>${(t.teams||[]).map(tm=>{ if(used.has(tm.id)&&teamId!==tm.id)return ""; return `<option value="${escapeAttr(tm.id)}" ${(teamId===tm.id)?"selected":""}>${escapeHtml(tm.name)}</option>`; }).join("")}</select>`).join("")}</div></div>`).join("");
+    document.querySelectorAll("[data-gsel]").forEach(sel=>{
+        sel.onchange=()=>{
+            const gi=parseInt(sel.getAttribute("data-gsel"));
+            const ti=parseInt(sel.getAttribute("data-gti"));
+            if(!t.groups[gi]) return;
+            t.groups[gi].teams[ti] = sel.value === "" ? null : sel.value;
+            saveCurrent(t);
+            render();
+        };
+    });
+    renderBracket(t);
 }
 function renderBracket(t){
     const list=document.getElementById("bracket-list"), empty=document.getElementById("bracket-empty"); if(!list)return;
@@ -159,13 +192,13 @@ function attachTournamentEvents(){
     else if(state.tournamentTab==="participants") attachParticipantsEvents(t);
     else if(state.tournamentTab==="format") attachFormatEvents(t);
     else if(state.tournamentTab==="schedule") attachScheduleEvents(t);
-    else if(state.tournamentTab==="results"){ setTimeout(()=>fillResults(t),0); }
+    else if(state.tournamentTab==="results") attachResultsEvents(t);
 }
 
 function renderSchedule(t){
     if(!t.scheduleMap) t.scheduleMap={};
     if(!t.scheduleConfig) t.scheduleConfig={matchDuration:60,gapDuration:10};
-    return `<div class="grid grid-cols-1 lg:grid-cols-3 gap-4"><div class="flex flex-col gap-4 lg:col-span-1"><div class="bg-white border border-gray-200 rounded p-4"><h2 class="font-medium mb-2">Herní plochy</h2><div class="flex flex-col gap-2 mb-2"><input id="field-name" class="border rounded px-2 py-1.5" placeholder="Název plochy"><input id="field-time" type="time" class="border rounded px-2 py-1.5" value="12:00"><button id="field-add" class="px-2 py-1 bg-blue-600 text-white rounded">Přidat herní plochu</button></div><div class="text-sm mb-1">Délka zápasu (min)</div><input id="match-dur" type="number" class="w-24 border rounded px-2 py-1.5 mb-2" value="${t.scheduleConfig.matchDuration}"><div class="text-sm mb-1">Čas mezi zápasy (min)</div><input id="gap-dur" type="number" class="w-24 border rounded px-2 py-1.5 mb-3" value="${t.scheduleConfig.gapDuration}"><div id="fields-list" class="flex flex-col gap-1"></div></div><div class="bg-white border border-gray-200 rounded p-4"><h2 class="font-medium mb-2">Rozdělit skupiny na herní plochy</h2><div id="schedule-map" class="flex flex-col gap-1"></div></div></div><div class="bg-white border border-gray-200 rounded p-4 lg:col-span-2"><h2 class="font-medium mb-2">Plán</h2><div class="text-xs text-gray-500 mb-2">1) Klikni na blok (zápas/pauza/událost) - označí se modře. 2) Klikni kamkoliv do sloupce vybrané herní plochy - blok se tam přesune, časy se přepočítají.</div><div class="flex flex-wrap gap-2 mb-3"><select id="sched-select" class="border rounded px-2 py-1.5"><option value="">-- vybrat skupinu/bracket --</option>${(t.groups||[]).map((g,i)=>`<option value="g:${i}">${escapeHtml(g.name)}</option>`).join("")}${t.bracket&&t.bracket.matches&&t.bracket.matches.length?`<option value="b:all">Bracket</option>`:""}</select><button id="sched-draw" class="px-2 py-1 border rounded">Rozlosovat do plánu</button><button id="sched-clear" class="px-2 py-1 border rounded">Smazat rozlosování</button></div><div id="schedule-board" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div></div></div>`;
+    return `<div class="grid grid-cols-1 lg:grid-cols-3 gap-4"><div class="flex flex-col gap-4 lg:col-span-1"><div class="bg-white border border-gray-200 rounded p-4"><h2 class="font-medium mb-2">Herní plochy</h2><div class="flex flex-col gap-2 mb-2"><input id="field-name" class="border rounded px-2 py-1.5" placeholder="Název plochy"><input id="field-time" type="time" class="border rounded px-2 py-1.5" value="12:00"><button id="field-add" class="px-2 py-1 bg-blue-600 text-white rounded">Přidat herní plochu</button></div><div class="text-sm mb-1">Délka zápasu (min)</div><input id="match-dur" type="number" class="w-24 border rounded px-2 py-1.5 mb-2" value="${t.scheduleConfig.matchDuration}"><div class="text-sm mb-1">Čas mezi zápasy (min)</div><input id="gap-dur" type="number" class="w-24 border rounded px-2 py-1.5 mb-3" value="${t.scheduleConfig.gapDuration}"><div id="fields-list" class="flex flex-col gap-1"></div></div><div class="bg-white border border-gray-200 rounded p-4"><h2 class="font-medium mb-2">Rozdělit skupiny na herní plochy</h2><div id="schedule-map" class="flex flex-col gap-1"></div></div></div><div class="bg-white border border-gray-200 rounded p-4 lg:col-span-2"><h2 class="font-medium mb-2">Plán</h2><div class="flex flex-wrap gap-2 mb-3"><select id="sched-select" class="border rounded px-2 py-1.5"><option value="">-- vybrat skupinu/bracket --</option>${(t.groups||[]).map((g,i)=>`<option value="g:${i}">${escapeHtml(g.name)}</option>`).join("")}${t.bracket&&t.bracket.matches&&t.bracket.matches.length?`<option value="b:all">Bracket</option>`:""}</select><button id="sched-draw" class="px-2 py-1 border rounded">Rozlosovat do plánu</button><button id="sched-clear" class="px-2 py-1 border rounded">Smazat rozlosování</button></div><div id="schedule-board" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div></div></div>`;
 }
 function attachScheduleEvents(t){
     if(!t.scheduleConfig) t.scheduleConfig={matchDuration:60,gapDuration:10};
@@ -207,112 +240,66 @@ function drawSchedule(t){
     const sel=document.getElementById("sched-select"); if(!sel)return; const val=sel.value; if(!val){alert("Vyber skupinu/bracket");return;}
     t.fields=t.fields||[]; if(t.fields.length===0){alert("Přidej plochy");return;} if(!t.schedule) t.schedule=[]; if(!t.scheduleConfig) t.scheduleConfig={matchDuration:60,gapDuration:10}; if(!t.scheduleMap) t.scheduleMap={};
     let list=[], targetFieldId=t.fields[0].id;
-    if(val.startsWith("g:")){ const gi=parseInt(val.split(":")[1]); const g=t.groups&&t.groups[gi]; if(!g){alert("Skupina nenalezena");return;} targetFieldId=t.scheduleMap[gi]||t.fields[0].id; const teams=(g.teams||[]).filter(x=>x); for(let i=0;i<teams.length;i++){ for(let j=i+1;j<teams.length;j++){ list.push({type:"match",teamA:teams[i],teamB:teams[j],label:g.name+": "+getTeamName(t,teams[i])+" - "+getTeamName(t,teams[j])}); } } }
-    else if(val==="b:all"){ (t.bracket&&t.bracket.matches?t.bracket.matches:[]).forEach(m=>{ if(m.teams&&m.teams[0]&&m.teams[1]) list.push({type:"match",teamA:m.teams[0],teamB:m.teams[1],label:(m.name||"Match")+": "+getTeamName(t,m.teams[0])+" - "+getTeamName(t,m.teams[1])}); }); targetFieldId=t.fields[0].id; }
+    if(val.startsWith("g:")){ const gi=parseInt(val.split(":")[1]); const g=t.groups&&t.groups[gi]; if(!g){alert("Skupina nenalezena");return;} targetFieldId=t.scheduleMap[gi]||t.fields[0].id; const teams=(g.teams||[]).filter(x=>x); for(let i=0;i<teams.length;i++){ for(let j=i+1;j<teams.length;j++){ list.push({type:"match",teamA:teams[i],teamB:teams[j],label:(g.name||"")+": "+getTeamName(t,teams[i])+" - "+getTeamName(t,teams[j])}); } } }
+    else if(val==="b:all"){ (t.bracket&&t.bracket.matches?t.bracket.matches:[]).forEach(m=>{ if(m.teams&&m.teams[0]&&m.teams[1]) list.push({type:"match",teamA:m.teams[0],teamB:m.teams[1],label:m.name||"Match"}); }); targetFieldId=t.fields[0].id; }
     const field=t.fields.find(f=>f.id===targetFieldId)||t.fields[0];
-    const itemsOnField=(t.schedule||[]).filter(s=>s.fieldId===field.id).sort((a,b)=>(a.startMin||0)-(b.startMin||0));
-    let cur=itemsOnField.length===0?timeToMin(field.startTime||"12:00"):(itemsOnField[itemsOnField.length-1].startMin+itemsOnField[itemsOnField.length-1].duration+t.scheduleConfig.gapDuration);
+    const itemsOnField=(t.schedule||[]).filter(s=>s.fieldId===field.id);
+    let cur=itemsOnField.length===0?timeToMin(field.startTime||"12:00"):( (itemsOnField[itemsOnField.length-1].startMin||0) + (itemsOnField[itemsOnField.length-1].duration||0) + t.scheduleConfig.gapDuration );
     for(let k=0;k<list.length;k++){ t.schedule.push({id:uid(),fieldId:field.id,type:"match",teamA:list[k].teamA,teamB:list[k].teamB,label:list[k].label,startMin:cur,duration:t.scheduleConfig.matchDuration}); cur+=t.scheduleConfig.matchDuration+t.scheduleConfig.gapDuration; }
     recomputeTimes(t); render();
 }
-let scheduleMoveState = { sid: null };
-
+let scheduleMoveState={sid:null};
 function getScheduleConflicts(t){
-    const conflicts = new Set();
-    if(!t.schedule) return conflicts;
-    const items = (t.schedule||[]).filter(s=>s.type==="match" && s.teamA && s.teamB);
-    const byTeam = {};
-    items.forEach(it=>{
-        const end = (it.startMin||0) + (it.duration||t.scheduleConfig&&t.scheduleConfig.matchDuration||60);
-        [it.teamA,it.teamB].forEach(tid=>{
+    const c=new Set();
+    if(!t.schedule) return c;
+    const items=(t.schedule||[]).filter(function(x){return x.type==="match"&&x.teamA&&x.teamB;});
+    const by={};
+    items.forEach(function(it){
+        const end=(it.startMin||0)+(it.duration||60);
+        [it.teamA,it.teamB].forEach(function(tid){
             if(!tid) return;
-            if(!byTeam[tid]) byTeam[tid]=[];
-            byTeam[tid].push({id:it.id, startMin:it.startMin||0, end, fieldId:it.fieldId});
+            if(!by[tid]) by[tid]=[];
+            by[tid].push({id:it.id,startMin:it.startMin||0,end:end});
         });
     });
-    Object.values(byTeam).forEach(list=>{
+    Object.keys(by).forEach(function(k){
+        const list=by[k];
         for(let i=0;i<list.length;i++){
             for(let j=i+1;j<list.length;j++){
-                const a=list[i], b=list[j];
+                const a=list[i],b=list[j];
                 if(a.id===b.id) continue;
-                if(a.end > b.startMin && b.end > a.startMin){
-                    conflicts.add(a.id); conflicts.add(b.id);
-                }else if(a.startMin===b.startMin){
-                    conflicts.add(a.id); conflicts.add(b.id);
-                }
+                if(a.end>b.startMin && b.end>a.startMin){ c.add(a.id); c.add(b.id); }
+                else if(a.startMin===b.startMin){ c.add(a.id); c.add(b.id); }
             }
         }
     });
-    return conflicts;
+    return c;
 }
-
 function renderScheduleBoard(t){
     const board=document.getElementById("schedule-board"); if(!board)return; t.fields=t.fields||[];
     if(!t.schedule) t.schedule=[];
     if(!scheduleMoveState) scheduleMoveState={sid:null};
     if(!t.scheduleConfig) t.scheduleConfig={matchDuration:60,gapDuration:10};
     recomputeTimes(t);
-    const conflicts = getScheduleConflicts(t);
-    
+    const conflicts=getScheduleConflicts(t);
     board.innerHTML=t.fields.map(f=>{
-        const items=(t.schedule||[]).filter(s=>s.fieldId===f.id);
-        return `<div class="border rounded"><div class="bg-gray-50 px-2 py-1 border-b font-medium">${escapeHtml(f.name)} (${escapeHtml(f.startTime||"12:00")})</div><div class="p-2 flex flex-col gap-1 min-h-[80px]" data-field="${escapeAttr(f.id)}">${items.map(it=>{ const end=(it.startMin||0)+(it.duration||0); const sel = scheduleMoveState.sid===it.id ? "ring-2 ring-blue-500" : ""; const bad = conflicts.has(it.id) ? "border-red-500 bg-red-50" : "bg-white"; return `<div data-sid="${escapeAttr(it.id)}" data-field="${escapeAttr(f.id)}" class="border rounded px-2 py-1 text-sm cursor-pointer select-none ${bad} ${sel}"><div class="font-medium">${escapeHtml(it.label||it.type)}</div><div class="text-xs text-gray-500">${minToTime(it.startMin)} - ${minToTime(end)} (${it.duration} min)</div></div>`; }).join("")}<div class="h-6" data-empty-slot="${escapeAttr(f.id)}"></div></div></div>`;
+        const items=[];
+        (t.schedule||[]).forEach(s=>{ if(s.fieldId===f.id) items.push(s); });
+        return `<div class="border rounded"><div class="bg-gray-50 px-2 py-1 border-b font-medium">${escapeHtml(f.name)} (${escapeHtml(f.startTime||"12:00")})</div><div class="p-2 flex flex-col gap-1 min-h-[60px]" data-field="${escapeAttr(f.id)}">${items.map(it=>{ const end=(it.startMin||0)+(it.duration||0); const sel=scheduleMoveState.sid===it.id?"ring-2 ring-blue-500":""; const bad=conflicts.has(it.id)?"border-red-500 bg-red-50":"bg-white"; return `<div data-sid="${escapeAttr(it.id)}" data-field="${escapeAttr(f.id)}" class="border rounded px-2 py-1 text-sm cursor-pointer select-none ${bad} ${sel}"><div class="font-medium">${escapeHtml(it.label||it.type)}</div><div class="text-xs text-gray-500">${minToTime(it.startMin)} - ${minToTime(end)} (${it.duration} min)</div></div>`; }).join("")}<div class="h-6" data-empty-slot="${escapeAttr(f.id)}"></div></div></div>`;
     }).join("");
-    
     document.querySelectorAll("#schedule-board [data-sid]").forEach(el=>{
         el.onclick=(e)=>{
             e.stopPropagation();
             const sid=el.getAttribute("data-sid");
-            if(scheduleMoveState.sid && scheduleMoveState.sid===sid){
-                scheduleMoveState.sid=null;
-            }else{
-                scheduleMoveState.sid=sid;
-            }
-            renderScheduleBoard(t);
-        };
-    });
-    
-    document.querySelectorAll("#schedule-board [data-empty-slot]").forEach(slot=>{
-        slot.onclick=(e)=>{
-            e.stopPropagation();
-            if(!scheduleMoveState.sid) return;
-            const fieldId=slot.getAttribute("data-empty-slot");
-            const moving=(t.schedule||[]).find(x=>x.id===scheduleMoveState.sid);
-            if(!moving) return;
-            const idx=t.schedule.findIndex(x=>x.id===moving.id);
-            if(idx>=0) t.schedule.splice(idx,1);
-            moving.fieldId=fieldId;
-            t.schedule.push(moving);
-            scheduleMoveState.sid=null;
-            recomputeTimes(t);
-            render();
-        };
-    });
-    
-    document.querySelectorAll("#schedule-board [data-sid]").forEach(el=>{
-        el.onclick=(e)=>{
-            e.stopPropagation();
-            const sid=el.getAttribute("data-sid");
-            if(scheduleMoveState.sid && scheduleMoveState.sid===sid){
-                scheduleMoveState.sid=null;
-                renderScheduleBoard(t);
-                return;
-            }
+            if(scheduleMoveState.sid && scheduleMoveState.sid===sid){ scheduleMoveState.sid=null; renderScheduleBoard(t); return; }
             if(scheduleMoveState.sid && scheduleMoveState.sid!==sid){
-                // insert before target
                 const moving=(t.schedule||[]).find(x=>x.id===scheduleMoveState.sid);
-                const targetId=sid;
-                if(!moving || moving.id===targetId) { scheduleMoveState.sid=null; renderScheduleBoard(t); return; }
-                const mIdx=t.schedule.findIndex(x=>x.id===moving.id);
-                if(mIdx>=0) t.schedule.splice(mIdx,1);
-                const tIdx=t.schedule.findIndex(x=>x.id===targetId);
-                if(tIdx>=0){
-                    moving.fieldId=el.getAttribute("data-field");
-                    t.schedule.splice(tIdx,0,moving);
-                }else{
-                    moving.fieldId=el.getAttribute("data-field");
-                    t.schedule.push(moving);
-                }
+                if(!moving || moving.id===sid){ scheduleMoveState.sid=null; renderScheduleBoard(t); return; }
+                const mi=t.schedule.findIndex(x=>x.id===moving.id);
+                if(mi>=0) t.schedule.splice(mi,1);
+                const ti2=t.schedule.findIndex(x=>x.id===sid);
+                moving.fieldId=el.getAttribute("data-field");
+                if(ti2>=0) t.schedule.splice(ti2,0,moving); else t.schedule.push(moving);
                 scheduleMoveState.sid=null;
                 recomputeTimes(t);
                 render();
@@ -322,65 +309,136 @@ function renderScheduleBoard(t){
             renderScheduleBoard(t);
         };
     });
+    document.querySelectorAll("#schedule-board [data-empty-slot]").forEach(slot=>{
+        slot.onclick=(e)=>{
+            e.stopPropagation();
+            if(!scheduleMoveState.sid) return;
+            const fid=slot.getAttribute("data-empty-slot");
+            const moving=(t.schedule||[]).find(x=>x.id===scheduleMoveState.sid);
+            if(!moving) return;
+            const mi=t.schedule.findIndex(x=>x.id===moving.id);
+            if(mi>=0) t.schedule.splice(mi,1);
+            moving.fieldId=fid;
+            t.schedule.push(moving);
+            scheduleMoveState.sid=null;
+            recomputeTimes(t);
+            render();
+        };
+    });
 }
 
-function openResultModal(t, key, ra, rb, res){
-    const modal=document.createElement("div"); modal.className="fixed inset-0 bg-black/40 flex items-center justify-center z-50";
-    modal.innerHTML=`<div class="bg-white rounded w-full max-w-sm p-4"><h3 class="font-medium mb-2">${res && (res.a!==""||res.b!=="")?"Upravit výsledek":"Zadat výsledek"}</h3><div class="text-sm mb-2">${escapeHtml(ra)} - ${escapeHtml(rb)}</div><div class="flex items-center gap-2 mb-3"><input id="res-ma" class="w-16 border rounded px-2 py-1 text-center" value="${escapeAttr(res&&res.a||"")}"><span>:</span><input id="res-mb" class="w-16 border rounded px-2 py-1 text-center" value="${escapeAttr(res&&res.b||"")}"></div><div class="flex justify-end gap-2"><button id="res-cancel" class="px-2 py-1 border rounded">Zrušit</button><button id="res-ok" class="px-2 py-1 bg-blue-600 text-white rounded">Uložit</button></div></div>`;
-    document.body.appendChild(modal);
-    modal.querySelector("#res-cancel").onclick=()=>modal.remove();
-    modal.querySelector("#res-ok").onclick=()=>{
-        const va=modal.querySelector("#res-ma").value, vb=modal.querySelector("#res-mb").value;
-        t.results=t.results||{}; t.results[key]={a:va,b:vb}; saveCurrent(t); modal.remove(); computeStandings(t); setTimeout(()=>fillResults(t),0);
-    };
+function renderResults(t){
+    if(!t.results) t.results={};
+    if(!t.schedule) t.schedule=[];
+    if(typeof window._resTab==="undefined") window._resTab="all";
+    const groups=(t.groups||[]);
+    let tabs=`<button data-rtab="all" class="px-2 py-1 rounded ${window._resTab==="all"?"bg-blue-600 text-white":"border bg-white"}">Všechny zápasy</button>`;
+    groups.forEach((g,gi)=>{
+        tabs+=`<button data-rtab="g:${gi}" class="px-2 py-1 rounded ${window._resTab==="g:"+gi?"bg-blue-600 text-white":"border bg-white"}">${escapeHtml(g.name)}</button>`;
+    });
+    return `<div class="flex flex-col gap-4"><div class="bg-white border border-gray-200 rounded p-4"><h2 class="font-medium mb-2">Výsledky</h2><div class="flex flex-wrap gap-2 mb-3" id="results-tabs">${tabs}</div><div id="results-standings" class="flex flex-col gap-3 mb-3"></div><div id="results-matches" class="flex flex-col gap-2"></div></div></div>`;
 }
 
 function fillResults(t){
+    if(!t) return;
     if(!t.results) t.results={};
     if(!t.schedule) t.schedule=[];
-    const matchesDivEl = document.getElementById("results-matches");
-    const standingsDivEl = document.getElementById("standings-list");
+    if(typeof window._resTab==="undefined") window._resTab="all";
+    const matchesDiv = document.getElementById("results-matches");
+    const standingsDiv = document.getElementById("results-standings");
+    computeStandings(t);
+    if(standingsDiv){
+        const groups=(t.groups||[]);
+        if(window._resTab==="all"){
+            standingsDiv.innerHTML=groups.map((g,gi)=>{
+                const st=t.standings&&t.standings[gi]?t.standings[gi]:[];
+                if(st.length===0) return "";
+                return `<div class="border rounded"><div class="bg-gray-50 px-2 py-1 border-b font-medium">${escapeHtml(g.name)}</div><div class="overflow-auto"><table class="w-full text-sm"><thead><tr class="border-b"><th class="text-left p-1">Tým</th><th class="text-center p-1">Z</th><th class="text-center p-1">V</th><th class="text-center p-1">R</th><th class="text-center p-1">P</th><th class="text-center p-1">Skóre</th><th class="text-center p-1">+/-</th><th class="text-center p-1">B</th><th class="text-center p-1">Poř.</th></tr></thead><tbody>${st.map(row=>`<tr class="border-b"><td class="p-1">${escapeHtml(row.name)}</td><td class="text-center p-1">${row.gp||0}</td><td class="text-center p-1">${row.w||0}</td><td class="text-center p-1">${row.d||0}</td><td class="text-center p-1">${row.l||0}</td><td class="text-center p-1">${row.gf||0}:${row.ga||0}</td><td class="text-center p-1">${row.gd>=0?"+"+row.gd:row.gd}</td><td class="text-center p-1">${row.pts||0}</td><td class="text-center p-1">${row.pos||""}</td></tr>`).join("")}</tbody></table></div></div>`;
+            }).join("")||`<div class="text-gray-500">Žádné tabulky</div>`;
+        }else{
+            const gi=parseInt(window._resTab.split(":")[1]);
+            const g=groups[gi];
+            const st=t.standings&&t.standings[gi]?t.standings[gi]:[];
+            if(!g || st.length===0){ standingsDiv.innerHTML=`<div class="text-gray-500">Žádné tabulky</div>`; }
+            else{
+                standingsDiv.innerHTML=`<div class="border rounded"><div class="bg-gray-50 px-2 py-1 border-b font-medium">${escapeHtml(g.name)}</div><div class="overflow-auto"><table class="w-full text-sm"><thead><tr class="border-b"><th class="text-left p-1">Tým</th><th class="text-center p-1">Z</th><th class="text-center p-1">V</th><th class="text-center p-1">R</th><th class="text-center p-1">P</th><th class="text-center p-1">Skóre</th><th class="text-center p-1">+/-</th><th class="text-center p-1">B</th><th class="text-center p-1">Poř.</th></tr></thead><tbody>${st.map(row=>`<tr class="border-b"><td class="p-1">${escapeHtml(row.name)}</td><td class="text-center p-1">${row.gp||0}</td><td class="text-center p-1">${row.w||0}</td><td class="text-center p-1">${row.d||0}</td><td class="text-center p-1">${row.l||0}</td><td class="text-center p-1">${row.gf||0}:${row.ga||0}</td><td class="text-center p-1">${row.gd>=0?"+"+row.gd:row.gd}</td><td class="text-center p-1">${row.pts||0}</td><td class="text-center p-1">${row.pos||""}</td></tr>`).join("")}</tbody></table></div></div>`;
+            }
+        }
+    }
+    if(!matchesDiv) return;
     const items=[];
     const seen=new Set();
-    (t.schedule||[]).filter(s=>s.type==="match"&&s.teamA&&s.teamB).forEach(s=>{
-        const key="sch:"+s.id; if(seen.has(key))return; seen.add(key);
-        items.push({id:key, group: s.label||"", a:s.teamA, b:s.teamB, time:s.startMin});
+    (t.schedule||[]).filter(s=>s.type==="match"&&s.teamA&&s.teamB).sort((a,b)=>(a.startMin||0)-(b.startMin||0)).forEach(s=>{
+        const key="sch:"+s.id;
+        if(seen.has(key)) return;
+        seen.add(key);
+        items.push({id:key, group:s.label||"", a:s.teamA, b:s.teamB, time:s.startMin});
     });
-    items.sort((a,b)=>(a.time||0)-(b.time||0));
     if(items.length===0){
-        (t.groups||[]).forEach((g,gi)=>{ const teams=(g.teams||[]).filter(x=>x); for(let i=0;i<teams.length;i++){ for(let j=i+1;j<teams.length;j++){ items.push({id:"m:"+gi+":"+teams[i]+":"+teams[j],group:g.name,a:teams[i],b:teams[j]}); } } });
-        (t.bracket&&t.bracket.matches?t.bracket.matches:[]).forEach((m,mi)=>{ if(m.teams&&m.teams[0]&&m.teams[1]) items.push({id:"bm:"+mi,name:m.name,a:m.teams[0],b:m.teams[1]}); });
-    }
-    if(matchesDivEl){
-        matchesDivEl.innerHTML=items.length===0?`<div class="text-gray-500">Žádné zápasy</div>`:items.map(it=>{
-            const key=it.id, res=t.results[key]||{}, timeLabel=it.time!=null?minToTime(it.time):"";
-            const raName = getTeamName(t,it.a)||"-", rbName = getTeamName(t,it.b)||"-";
-            if(res.a!==undefined && res.a!=="" && res.b!==undefined && res.b!==""){
-                return `<button data-res-edit="${escapeAttr(key)}" data-ra="${escapeAttr(raName)}" data-rb="${escapeAttr(rbName)}" class="border rounded p-2 hover:bg-gray-50 w-full text-left"><div class="text-xs text-gray-500 mb-1">${timeLabel||""}</div><div class="grid grid-cols-[1fr_auto_1fr] items-center gap-2"><div class="text-sm font-medium text-right">${escapeHtml(raName)}</div><div class="font-medium text-center">${escapeHtml(String(res.a))} : ${escapeHtml(String(res.b))}</div><div class="text-sm font-medium text-left">${escapeHtml(rbName)}</div></div></button>`;
+        (t.groups||[]).forEach((g,gi)=>{
+            const teams=(g.teams||[]).filter(x=>x);
+            for(let i=0;i<teams.length;i++){
+                for(let j=i+1;j<teams.length;j++){
+                    items.push({id:"m:"+gi+":"+teams[i]+":"+teams[j], group:g.name, a:teams[i], b:teams[j]});
+                }
             }
-            return `<div class="border rounded p-2"><div class="text-xs text-gray-500 mb-1">${timeLabel||""}</div><div class="grid grid-cols-[1fr_auto_1fr] items-center gap-2"><div class="text-sm font-medium text-right">${escapeHtml(raName)}</div><div class="flex items-center gap-1 justify-center"><input data-res-inp-a="${escapeAttr(key)}" class="w-10 border rounded px-1 py-1 text-center text-sm" placeholder="0"><span>:</span><input data-res-inp-b="${escapeAttr(key)}" class="w-10 border rounded px-1 py-1 text-center text-sm" placeholder="0"></div><div class="flex items-center gap-2"><div class="text-sm font-medium text-left flex-1">${escapeHtml(rbName)}</div><button data-res-save="${escapeAttr(key)}" class="px-2 py-1 bg-blue-600 text-white rounded text-sm">Uložit</button></div></div></div>`;
-        }).join("");
-        matchesDivEl.querySelectorAll("[data-res-save]").forEach(btn=>{
-            btn.onclick=()=>{
-                const key=btn.getAttribute("data-res-save");
-                const ia=matchesDivEl.querySelector(`[data-res-inp-a="${key}"]`);
-                const ib=matchesDivEl.querySelector(`[data-res-inp-b="${key}"]`);
-                const va=ia?ia.value:"", vb=ib?ib.value:"";
-                t.results=t.results||{}; t.results[key]={a:va,b:vb}; saveCurrent(t); computeStandings(t); setTimeout(()=>fillResults(t),0);
-            };
         });
-        matchesDivEl.querySelectorAll("[data-res-edit]").forEach(btn=>{
-            btn.onclick=()=>{
-                const key=btn.getAttribute("data-res-edit"), ra=btn.getAttribute("data-ra")||"", rb=btn.getAttribute("data-rb")||"";
-                openResultModal(t,key,ra,rb,t.results[key]||{});
-            };
+        (t.bracket&&t.bracket.matches?t.bracket.matches:[]).forEach((m,mi)=>{
+            if(m.teams&&m.teams[0]&&m.teams[1]) items.push({id:"bm:"+mi, name:m.name, a:m.teams[0], b:m.teams[1]});
         });
     }
-    computeStandings(t);
-    if(!standingsDivEl)return;
-    standingsDivEl.innerHTML=(t.groups||[]).map((g,gi)=>{ const st=t.standings&&t.standings[gi]?t.standings[gi]:[]; if(st.length===0)return""; return `<div class="border rounded"><div class="bg-gray-50 px-2 py-1 border-b font-medium">${escapeHtml(g.name)}</div><div class="overflow-auto"><table class="w-full text-sm"><thead><tr class="border-b"><th class="text-left p-1">Tým</th><th class="text-center p-1">Z</th><th class="text-center p-1">V</th><th class="text-center p-1">R</th><th class="text-center p-1">P</th><th class="text-center p-1">Skóre</th><th class="text-center p-1">+/-</th><th class="text-center p-1">B</th><th class="text-center p-1">Poř.</th></tr></thead><tbody>${st.map(row=>`<tr class="border-b"><td class="p-1">${escapeHtml(row.name)}</td><td class="text-center p-1">${row.gp||0}</td><td class="text-center p-1">${row.w||0}</td><td class="text-center p-1">${row.d||0}</td><td class="text-center p-1">${row.l||0}</td><td class="text-center p-1">${row.gf||0}:${row.ga||0}</td><td class="text-center p-1">${row.gd>=0?"+"+row.gd:row.gd}</td><td class="text-center p-1">${row.pts||0}</td><td class="text-center p-1">${row.pos||""}</td></tr>`).join("")}</tbody></table></div></div>`; }).join("")||`<div class="text-gray-500">Žádné tabulky</div>`;
+    let filtered=items;
+    if(window._resTab!=="all"){
+        const gi=parseInt(window._resTab.split(":")[1]);
+        const gname=(t.groups&&t.groups[gi])?t.groups[gi].name:"";
+        filtered=items.filter(it=> (it.group===gname) || (it.id.indexOf("m:"+gi+":")===0));
+    }
+    matchesDiv.innerHTML=filtered.length===0?`<div class="text-gray-500">Žádné zápasy</div>`:filtered.map(it=>{
+        const key=it.id, res=t.results[key]||{}, timeLabel=it.time!=null?minToTime(it.time):"";
+        const raName=getTeamName(t,it.a)||"", rbName=getTeamName(t,it.b)||"";
+        if(res.a!==undefined && res.a!=="" && res.b!==undefined && res.b!==""){
+            return `<div class="border rounded p-2 flex items-center justify-between"><div class="text-sm flex-1">${timeLabel?`<span class="text-gray-500 mr-2">${timeLabel}</span>`:""}${escapeHtml(it.group||it.name||"")} ${escapeHtml(raName)} - ${escapeHtml(rbName)}</div><div class="font-medium cursor-pointer" data-res-edit="${escapeAttr(key)}" data-ra="${escapeAttr(raName)}" data-rb="${escapeAttr(rbName)}">${escapeHtml(String(res.a))} : ${escapeHtml(String(res.b))}</div></div>`;
+        }
+        return `<div class="border rounded p-2 flex items-center justify-between"><div class="text-sm flex-1">${timeLabel?`<span class="text-gray-500 mr-2">${timeLabel}</span>`:""}${escapeHtml(it.group||it.name||"")} ${escapeHtml(raName)} - ${escapeHtml(rbName)}</div><button data-res-open="${escapeAttr(key)}" data-ra="${escapeAttr(raName)}" data-rb="${escapeAttr(rbName)}" class="px-2 py-1 border rounded text-sm">Zadat výsledek</button></div>`;
+    }).join("");
+    matchesDiv.querySelectorAll("[data-res-open]").forEach(btn=>{
+        btn.onclick=()=>{
+            const key=btn.getAttribute("data-res-open"), ra=btn.getAttribute("data-ra")||"", rb=btn.getAttribute("data-rb")||"";
+            const modal=document.createElement("div"); modal.className="fixed inset-0 bg-black/40 flex items-center justify-center z-50";
+            modal.innerHTML=`<div class="bg-white rounded w-full max-w-sm p-4"><h3 class="font-medium mb-2">Zadat výsledek</h3><div class="text-sm mb-2">${escapeHtml(ra)} - ${escapeHtml(rb)}</div><div class="flex items-center gap-2 mb-3"><input id="res-ma" class="w-16 border rounded px-2 py-1 text-center"><span>:</span><input id="res-mb" class="w-16 border rounded px-2 py-1 text-center"></div><div class="flex justify-end gap-2"><button id="res-cancel" class="px-2 py-1 border rounded">Zrušit</button><button id="res-ok" class="px-2 py-1 bg-blue-600 text-white rounded">Uložit</button></div></div>`;
+            document.body.appendChild(modal);
+            modal.querySelector("#res-cancel").onclick=()=>modal.remove();
+            modal.querySelector("#res-ok").onclick=()=>{
+                const va=modal.querySelector("#res-ma").value, vb=modal.querySelector("#res-mb").value;
+                t.results=t.results||{}; t.results[key]={a:va,b:vb}; saveCurrent(t); modal.remove(); fillResults(t);
+            };
+        };
+    });
+    matchesDiv.querySelectorAll("[data-res-edit]").forEach(el=>{
+        el.onclick=()=>{
+            const key=el.getAttribute("data-res-edit"), ra=el.getAttribute("data-ra")||"", rb=el.getAttribute("data-rb")||"";
+            const res=t.results&&t.results[key]?t.results[key]:{};
+            const modal=document.createElement("div"); modal.className="fixed inset-0 bg-black/40 flex items-center justify-center z-50";
+            modal.innerHTML=`<div class="bg-white rounded w-full max-w-sm p-4"><h3 class="font-medium mb-2">Upravit výsledek</h3><div class="text-sm mb-2">${escapeHtml(ra)} - ${escapeHtml(rb)}</div><div class="flex items-center gap-2 mb-3"><input id="res-ma" class="w-16 border rounded px-2 py-1 text-center" value="${escapeAttr(res.a||"")}"><span>:</span><input id="res-mb" class="w-16 border rounded px-2 py-1 text-center" value="${escapeAttr(res.b||"")}"></div><div class="flex justify-end gap-2"><button id="res-cancel" class="px-2 py-1 border rounded">Zrušit</button><button id="res-ok" class="px-2 py-1 bg-blue-600 text-white rounded">Uložit</button></div></div>`;
+            document.body.appendChild(modal);
+            modal.querySelector("#res-cancel").onclick=()=>modal.remove();
+            modal.querySelector("#res-ok").onclick=()=>{
+                const va=modal.querySelector("#res-ma").value, vb=modal.querySelector("#res-mb").value;
+                t.results=t.results||{}; t.results[key]={a:va,b:vb}; saveCurrent(t); modal.remove(); fillResults(t);
+            };
+        };
+    });
 }
-function renderResults(t){ fillResults(t); }
+
+function attachResultsEvents(t){
+    document.querySelectorAll("#results-tabs [data-rtab]").forEach(btn=>{
+        btn.onclick=()=>{
+            window._resTab=btn.getAttribute("data-rtab");
+            render();
+        };
+    });
+    setTimeout(function(){ fillResults(t); }, 0);
+}
 
 function computeStandings(t){
     if(!t.standings) t.standings={};
