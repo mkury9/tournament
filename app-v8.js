@@ -40,10 +40,10 @@ function renderHome(){
     return `<div class="min-h-screen">
         <header class="bg-white border-b border-gray-200"><div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between"><h1 class="text-xl font-semibold">TurnajPlanner</h1><button id="btn-new" class="bg-blue-600 text-white px-4 py-2 rounded">New Tournament</button></div></header>
         <main class="max-w-5xl mx-auto px-6 py-8"><h2 class="text-lg font-medium mb-4">Historie turnajů</h2>
-        ${list.length===0?`<div class="text-gray-500">Zatím žádné turnaje.</div>`:`<div class="bg-white border border-gray-200 rounded divide-y">${list.map(t=>`<button data-open="${escapeAttr(t.id)}" class="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between"><div><div class="font-medium">${escapeHtml(t.name)}</div><div class="text-sm text-gray-500">${escapeHtml(t.date||"")} · ${escapeHtml(t.location||"")} · ${escapeHtml(t.division||"")}</div></div><div class="text-gray-400">›</div></button>`).join("")}</div>`}
+        ${list.length===0?`<div class="text-gray-500">Zatím žádné turnaje.</div>`:`<div class="bg-white border border-gray-200 rounded divide-y">${list.map(t=>`<div class="flex items-center justify-between px-4 py-3 hover:bg-gray-50"><button data-open="${escapeAttr(t.id)}" class="flex-1 text-left"><div class="font-medium">${escapeHtml(t.name)}</div><div class="text-sm text-gray-500">${escapeHtml(t.date||"")} · ${escapeHtml(t.location||"")} · ${escapeHtml(t.division||"")}</div></button><button data-del="${escapeAttr(t.id)}" class="ml-3 text-red-600 hover:text-red-800 text-sm px-2 py-1 border border-red-200 rounded">Smazat</button></div>`).join("")}</div>`}
         </main></div>`;
 }
-function attachHomeEvents(){ const b=document.getElementById("btn-new"); if(b) b.onclick=()=>{ state.wizard={step:1,name:"",date:"",location:"",division:""}; navigate("wizard"); }; document.querySelectorAll("[data-open]").forEach(btn=>{ btn.onclick=()=>{ const id=btn.getAttribute("data-open"); setCurrentId(id); state.currentId=id; state.tournamentTab="general"; navigate("tournament"); }; }); }
+function attachHomeEvents(){ const b=document.getElementById("btn-new"); if(b) b.onclick=()=>{ state.wizard={step:1,name:"",date:"",location:"",division:""}; navigate("wizard"); }; document.querySelectorAll("[data-open]").forEach(btn=>{ btn.onclick=()=>{ const id=btn.getAttribute("data-open"); setCurrentId(id); state.currentId=id; state.tournamentTab="general"; navigate("tournament"); }; }); document.querySelectorAll("[data-del]").forEach(btn=>{ btn.onclick=(e)=>{ e.stopPropagation(); const id=btn.getAttribute("data-del"); if(!confirm("Smazat turnaj?")) return; state.tournaments=state.tournaments.filter(x=>x.id!==id); saveTournaments(state.tournaments); if(state.currentId===id){ state.currentId=null; setCurrentId(""); } render(); }; }); }
 
 function renderWizard(){
     const w=state.wizard;
@@ -119,7 +119,8 @@ function renderFormat(t){
     return `<div class="flex flex-col gap-4"><div class="bg-white border border-gray-200 rounded p-4"><h2 class="font-medium mb-2">Typ formátu</h2><div class="flex gap-6"><label class="flex items-center gap-2"><input type="radio" name="ftype" value="groups_only" ${t.format.type==="groups_only"?"checked":""}> Group phase only</label><label class="flex items-center gap-2"><input type="radio" name="ftype" value="groups_knockout" ${t.format.type==="groups_knockout"?"checked":""}> Group phase and knockout phase</label></div><div class="mt-3 ${t.format.type==="groups_knockout"?"":"hidden"}"><div class="flex flex-wrap gap-4 items-end"><div><div class="text-sm mb-1">Počet skupin</div><input id="f-gcount" type="number" min="1" class="w-20 border rounded px-2 py-1.5" value="${t.format.groupsCount||2}"></div><div><div class="text-sm mb-1">Počet týmů ve skupině</div><input id="f-tpg" type="number" min="1" class="w-20 border rounded px-2 py-1.5" value="${t.format.teamsPerGroup||4}"></div><div><div class="text-sm mb-1">Kolik postupuje</div><input id="f-adv" type="number" min="1" class="w-20 border rounded px-2 py-1.5" value="${t.format.advanceCount||2}"></div><button id="f-build" class="px-2 py-1 bg-blue-600 text-white rounded text-sm">Vytvořit skupiny</button></div></div><div class="mt-3 ${t.format.type==="groups_only"?"":"hidden"}"><div class="flex flex-wrap gap-4 items-end"><div><div class="text-sm mb-1">Počet skupin</div><input id="f-gcount2" type="number" min="1" class="w-20 border rounded px-2 py-1.5" value="${t.format.groupsCount||2}"></div><div><div class="text-sm mb-1">Počet týmů ve skupině</div><input id="f-tpg2" type="number" min="1" class="w-20 border rounded px-2 py-1.5" value="${t.format.teamsPerGroup||4}"></div><button id="f-build2" class="px-2 py-1 bg-blue-600 text-white rounded text-sm">Vytvořit skupiny</button></div></div></div><div class="grid grid-cols-1 lg:grid-cols-2 gap-4"><div class="bg-white border border-gray-200 rounded p-4"><h2 class="font-medium mb-2">Rozdělení do skupin</h2><div id="groups-list" class="flex flex-col gap-3"></div></div><div class="bg-white border border-gray-200 rounded p-4"><div class="flex items-center justify-between mb-2"><h2 class="font-medium">Knockout phase</h2><button id="bracket-add-pre" class="px-2 py-1 border rounded text-sm ${t.format.type==="groups_knockout"?"":"hidden"}">+ Přidat zápas před semifinále</button></div><div id="bracket-list" class="flex flex-col gap-2"></div><div id="bracket-empty" class="text-gray-500">Vytvoř skupiny a nastav počet postupujících.</div></div></div></div>`;
 }
 function attachFormatEvents(t){
-
+    if(!t.bracket) t.bracket={matches:[]};
+    if(t.bracket.matches){ let pre=0; t.bracket.matches.forEach(m=>{ if(m.isPre){ pre++; m.name="Předsemifinále "+pre; } }); saveCurrent(t); }
     if(!t.format) t.format={type:"groups_only",groupsCount:2,teamsPerGroup:4,advanceCount:2};
     if(!t.bracket) t.bracket={matches:[]};
     document.querySelectorAll("input[name=ftype]").forEach(r=>{ r.onchange=()=>{t.format.type=r.value; saveCurrent(t); render();}; });
@@ -412,7 +413,7 @@ function renderResults(t){
     groups.forEach((g,gi)=>{
         tabs+=`<button data-rtab="g:${gi}" class="px-2 py-1 rounded ${window._resTab==="g:"+gi?"bg-blue-600 text-white":"border bg-white"}">${escapeHtml(g.name)}</button>`;
     });
-    return `<div class="flex flex-col gap-4"><div class="bg-white border border-gray-200 rounded p-4"><h2 class="font-medium mb-2">Výsledky</h2><div class="flex flex-wrap gap-2 mb-3" id="results-tabs">${tabs}</div><div id="results-standings" class="flex flex-col gap-3 mb-3"></div><div id="results-matches" class="flex flex-col gap-2"></div></div></div>`;
+    return `<div class="flex flex-col gap-4"><div class="bg-white border border-gray-200 rounded p-4"><h2 class="font-medium mb-2">Výsledky</h2><div class="flex flex-wrap gap-2 mb-3 items-center" id="results-tabs">${tabs}<select id="res-team-filter" class="ml-auto border rounded px-2 py-1 text-sm"><option value="">Všechny týmy</option></select></div><div id="results-standings" class="flex flex-col gap-3 mb-3"></div><div id="results-matches" class="flex flex-col gap-2"></div></div></div>`;
 }
 
 function fillResults(t){
@@ -421,7 +422,16 @@ function fillResults(t){
     if(!t.results) t.results={};
     if(!t.schedule) t.schedule=[];
     if(typeof window._resTab==="undefined") window._resTab="all";
+    if(typeof window._resTeam==="undefined") window._resTeam=null;
     const matchesDiv = document.getElementById("results-matches");
+    // populate team filter dropdown
+    const tfSel=document.getElementById("res-team-filter");
+    if(tfSel){
+        const cur=tfSel.value;
+        const opts=["<option value=\"\">Všechny týmy</option>"].concat((t.teams||[]).map(tm=>`<option value="${escapeAttr(tm.id)}" ${window._resTeam===tm.id?"selected":""}>${escapeHtml(tm.name)}</option>`));
+        tfSel.innerHTML=opts.join("");
+        if(window._resTeam) tfSel.value=window._resTeam;
+    }
     const standingsDiv = document.getElementById("results-standings");
     computeStandings(t);
 
@@ -584,23 +594,34 @@ function fillResults(t){
         }
     });
 
+    function getResultForBm(mi2){
+        const mm=(t.bracket&&t.bracket.matches)?t.bracket.matches[mi2]:null;
+        let res=t.results&&t.results["bm:"+mi2];
+        if(!res && mm){
+            const sched=(t.schedule||[]).find(s=>s.type==="match" && s.label && (s.label===mm.name || (mm.name&&s.label.indexOf(mm.name)>=0)));
+            if(sched) res=t.results&&t.results["sch:"+sched.id];
+            if(!res && mm.teams&&mm.teams[0]&&mm.teams[1]){
+                const sched2=(t.schedule||[]).find(s=>s.type==="match" && s.teamA && s.teamB && ((String(s.teamA)===String(mm.teams[0])&&String(s.teamB)===String(mm.teams[1]))||(String(s.teamA)===String(mm.teams[1])&&String(s.teamB)===String(mm.teams[0]))));
+                if(sched2) res=t.results&&t.results["sch:"+sched2.id];
+            }
+        }
+        return {res, mm};
+    }
     function getWinnerBm(mi2){
-        const res=t.results&&t.results["bm:"+mi2];
+        const {res,mm}=getResultForBm(mi2);
         if(!res) return null;
         const a=parseInt(res.a),b=parseInt(res.b);
         if(isNaN(a)||isNaN(b)) return null;
-        const mm=(t.bracket&&t.bracket.matches)?t.bracket.matches[mi2]:null;
         if(!mm||!mm.teams) return null;
         if(a>b) return resolvePosToTeam(t,mm.teams[0]);
         if(b>a) return resolvePosToTeam(t,mm.teams[1]);
         return null;
     }
     function getLoserBm(mi2){
-        const res=t.results&&t.results["bm:"+mi2];
+        const {res,mm}=getResultForBm(mi2);
         if(!res) return null;
         const a=parseInt(res.a),b=parseInt(res.b);
         if(isNaN(a)||isNaN(b)) return null;
-        const mm=(t.bracket&&t.bracket.matches)?t.bracket.matches[mi2]:null;
         if(!mm||!mm.teams) return null;
         if(a>b) return resolvePosToTeam(t,mm.teams[1]);
         if(b>a) return resolvePosToTeam(t,mm.teams[0]);
@@ -646,7 +667,7 @@ function fillResults(t){
                 // add pre-semif from bracket only if not in schedule
                 // but we already skip if in schedule? schedule handled separately
             }
-            items.push({id:key, name:m.name, a:resolvePosToTeam(t,m.teams[0]), b:resolvePosToTeam(t,m.teams[1])});
+            const _t=(t.schedule||[]).find(s=>s.type==="match"&&(s.label===m.name||s.label===(m.name||"").trim())); items.push({id:key, name:m.name, a:resolvePosToTeam(t,m.teams[0]), b:resolvePosToTeam(t,m.teams[1]), time:_t?_t.startMin:undefined});
         }
     });
     }
@@ -665,9 +686,8 @@ function fillResults(t){
             if(!ra && m.teams && m.teams[0]) ra=getTeamName(t,resolvePosToTeam(t,m.teams[0]))||"";
             if(!rb && m.teams && m.teams[1]) rb=getTeamName(t,resolvePosToTeam(t,m.teams[1]))||"";
             if(!ra) ra="-"; if(!rb) rb="-";
-            const pk2=[ra,rb].join("|");
-            if(seenPair.has(pk2)) return;
             if(items.find(x=>x.id===key)) return;
+            if(items.find(x=>x.name===m.name)) return;
             seen.add(key);
             const _ft=(t.schedule||[]).find(s=>s.type==="match"&&(s.label===m.name||s.label===(m.name||"").trim())); items.push({id:key, name:m.name, a:"__f1_"+mi+"__"+ra, b:"__f2_"+mi+"__"+rb, _fin:true, time:_ft?_ft.startMin:undefined});
         }
@@ -683,7 +703,7 @@ function fillResults(t){
                 if(String(m.teams[0])===String(m.teams[1])) return;
                 if(seenPre.has(key)) return;
                 seen.add(key);
-                items.push({id:key, name:m.name, a:resolvePosToTeam(t,m.teams[0]), b:resolvePosToTeam(t,m.teams[1])});
+                const _t=(t.schedule||[]).find(s=>s.type==="match"&&(s.label===m.name||s.label===(m.name||"").trim())); items.push({id:key, name:m.name, a:resolvePosToTeam(t,m.teams[0]), b:resolvePosToTeam(t,m.teams[1]), time:_t?_t.startMin:undefined});
                 return;
             }
             let ra="", rb="";
@@ -729,23 +749,34 @@ function fillResults(t){
     });
     }
     // resolve finals
+    function getResultForBm(mi2){
+        const mm=(t.bracket&&t.bracket.matches)?t.bracket.matches[mi2]:null;
+        let res=t.results&&t.results["bm:"+mi2];
+        if(!res && mm){
+            const sched=(t.schedule||[]).find(s=>s.type==="match" && s.label && (s.label===mm.name || (mm.name&&s.label.indexOf(mm.name)>=0)));
+            if(sched) res=t.results&&t.results["sch:"+sched.id];
+            if(!res && mm.teams&&mm.teams[0]&&mm.teams[1]){
+                const sched2=(t.schedule||[]).find(s=>s.type==="match" && s.teamA && s.teamB && ((String(s.teamA)===String(mm.teams[0])&&String(s.teamB)===String(mm.teams[1]))||(String(s.teamA)===String(mm.teams[1])&&String(s.teamB)===String(mm.teams[0]))));
+                if(sched2) res=t.results&&t.results["sch:"+sched2.id];
+            }
+        }
+        return {res, mm};
+    }
     function getWinnerBm(mi2){
-        const res=t.results&&t.results["bm:"+mi2];
+        const {res,mm}=getResultForBm(mi2);
         if(!res) return null;
         const a=parseInt(res.a),b=parseInt(res.b);
         if(isNaN(a)||isNaN(b)) return null;
-        const mm=(t.bracket&&t.bracket.matches)?t.bracket.matches[mi2]:null;
         if(!mm||!mm.teams) return null;
         if(a>b) return resolvePosToTeam(t,mm.teams[0]);
         if(b>a) return resolvePosToTeam(t,mm.teams[1]);
         return null;
     }
     function getLoserBm(mi2){
-        const res=t.results&&t.results["bm:"+mi2];
+        const {res,mm}=getResultForBm(mi2);
         if(!res) return null;
         const a=parseInt(res.a),b=parseInt(res.b);
         if(isNaN(a)||isNaN(b)) return null;
-        const mm=(t.bracket&&t.bracket.matches)?t.bracket.matches[mi2]:null;
         if(!mm||!mm.teams) return null;
         if(a>b) return resolvePosToTeam(t,mm.teams[1]);
         if(b>a) return resolvePosToTeam(t,mm.teams[0]);
@@ -831,7 +862,7 @@ function fillResults(t){
                 seenPre.add(key);
                 seen.add(key);
                 if(String(m.teams[0])===String(m.teams[1])) return;
-                items.push({id:key, name:m.name, a:resolvePosToTeam(t,m.teams[0]), b:resolvePosToTeam(t,m.teams[1])});
+                const _t=(t.schedule||[]).find(s=>s.type==="match"&&(s.label===m.name||s.label===(m.name||"").trim())); items.push({id:key, name:m.name, a:resolvePosToTeam(t,m.teams[0]), b:resolvePosToTeam(t,m.teams[1]), time:_t?_t.startMin:undefined});
                 return;
             }
             if(/semi/i.test(m.name) && !/předsemif|pre-semif|presemi/i.test(m.name)){
@@ -839,7 +870,7 @@ function fillResults(t){
                 if(items.find(x=>x.name===m.name)) return;
                 seen.add(key);
                 if(String(m.teams[0])===String(m.teams[1])) return;
-                items.push({id:key, name:m.name, a:resolvePosToTeam(t,m.teams[0]), b:resolvePosToTeam(t,m.teams[1])});
+                const _t=(t.schedule||[]).find(s=>s.type==="match"&&(s.label===m.name||s.label===(m.name||"").trim())); items.push({id:key, name:m.name, a:resolvePosToTeam(t,m.teams[0]), b:resolvePosToTeam(t,m.teams[1]), time:_t?_t.startMin:undefined});
                 return;
             }
             if(seen.has(key)) return;
@@ -871,6 +902,10 @@ function fillResults(t){
         const gi=parseInt(window._resTab.split(":")[1]);
         const gname=(t.groups&&t.groups[gi])?t.groups[gi].name:"";
         filtered=items.filter(it=> (it.group===gname) || (it.id.indexOf("m:"+gi+":")===0) || (it.group && it.group.indexOf(gname)>=0));
+    }
+    if(window._resTeam){
+        const tf=window._resTeam;
+        filtered=filtered.filter(it=> String(resolvePosToTeam(t,it.a))===String(tf) || String(resolvePosToTeam(t,it.b))===String(tf));
     }
     matchesDiv.innerHTML=filtered.length===0?`<div class="text-gray-500">Žádné zápasy</div>`:`<div class="grid grid-cols-[70px_1fr_auto_1fr_90px] gap-2 items-center text-xs font-medium text-gray-600 px-2"><div>Čas</div><div>Tým 1</div><div>Skóre</div><div>Tým 2</div><div></div></div>`+filtered.map(it=>{
         const key=it.id, res=t.results[key]||{}, timeLabel=it.time!=null?minToTime(it.time):"-";
@@ -943,6 +978,10 @@ function attachResultsEvents(t){
         };
     });
     setTimeout(function(){ fillResults(t); }, 0);
+    setTimeout(function(){
+        const sel=document.getElementById("res-team-filter");
+        if(sel){ sel.onchange=()=>{ window._resTeam = sel.value||null; fillResults(t); }; }
+    }, 0);
 }
 
 function computeStandings(t){
