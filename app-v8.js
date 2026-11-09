@@ -423,6 +423,8 @@ function fillResults(t){
     if(!t.schedule) t.schedule=[];
     if(typeof window._resTab==="undefined") window._resTab="all";
     if(typeof window._resTeam==="undefined") window._resTeam=null;
+    try{ console.log("FILL start:", (t.bracket&&t.bracket.matches?t.bracket.matches:[]).filter(m=>/\bfinal\b/i.test(m.name)).map(m=>m.name+":"+JSON.stringify(m.teams))); }catch(e){}
+    try{ console.log("FILL start finals:", (t.bracket&&t.bracket.matches?t.bracket.matches:[]).filter(m=>/\bfinal\b/i.test(m.name)).map(m=>m.name+":"+JSON.stringify(m.teams))); }catch(e){}
     const matchesDiv = document.getElementById("results-matches");
     // populate team filter dropdown
     const tfSel=document.getElementById("res-team-filter");
@@ -659,10 +661,8 @@ function fillResults(t){
             const key="bm:"+mi;
             if(seen.has(key)) return;
             seen.add(key);
-            const pk=[resolvePosToTeam(t,m.teams[0]),resolvePosToTeam(t,m.teams[1])].slice().sort().join("|");
-            if(seenPair.has(pk)) return;
             const rA=resolvePosToTeam(t,m.teams[0]), rB=resolvePosToTeam(t,m.teams[1]);
-            if(items.find(x=> (x.a===rA&&x.b===rB) || (x.a===rB&&x.b===rA))) return;
+            if(items.find(x=> x.id!==key && (x.id.startsWith("sch:") && (x.group===m.name || x.name===m.name)))) return;
             if(/předsemif|pre-semif|presemi/i.test(m.name)){
                 // add pre-semif from bracket only if not in schedule
                 // but we already skip if in schedule? schedule handled separately
@@ -897,6 +897,8 @@ function fillResults(t){
         });
     }
 
+    try{ console.log("FILL end finals:", (t.bracket&&t.bracket.matches?t.bracket.matches:[]).filter(m=>/\bfinal\b/i.test(m.name)).map(m=>m.name+":"+JSON.stringify(m.teams))); }catch(e){}
+    try{ console.log("FILL end:", (t.bracket&&t.bracket.matches?t.bracket.matches:[]).filter(m=>/\bfinal\b/i.test(m.name)).map(m=>m.name+":"+JSON.stringify(m.teams)), "items finals:", items.filter(x=>/\bfinal\b/i.test(x.name||"")).map(x=>x.id)); }catch(e){}
     let filtered=items;
     if(window._resTab!=="all"){
         const gi=parseInt(window._resTab.split(":")[1]);
